@@ -672,16 +672,17 @@ async def generate_report(request: ReportRequest):
         raise HTTPException(status_code=503, detail="ReportAgent is not configured. Missing API key.")
     
     try:
-        import os
-        from fastapi.responses import FileResponse
+        from fastapi.responses import Response
         
-        # Ensure outputs folder exists
-        os.makedirs("outputs/reports", exist_ok=True)
-        out_path = f"outputs/reports/report_{int(datetime.now().timestamp())}.pdf"
+        # Generate the PDF entirely in memory — no disk writes needed
+        pdf_bytes = agent.generate_pdf_report(request.data)
         
-        agent.generate_pdf_report(request.data, out_path)
-        
-        return FileResponse(out_path, filename="Energy_Forecast_Report.pdf", media_type="application/pdf")
+        # Send the raw bytes directly to the user's browser as a PDF download
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment; filename=Energy_Forecast_Report.pdf"}
+        )
     except Exception as e:
         logger.error(f"Report generation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -1,4 +1,5 @@
 import { apiClient } from './client'
+import { settingsStore } from '@/store/settingsStore'
 import type {
   HealthResponse,
   MetricsResponse,
@@ -47,8 +48,9 @@ export const api = {
     apiClient.post<ChatResponse>('/chat', data),
 
   generateReport: async (data: ReportRequest) => {
-    // Requires a custom fetch to handle Blob downloading for PDF
-    const response = await fetch('http://localhost:8000/generate-report', {
+    // Use the dynamic backend URL from settings (not hardcoded localhost)
+    const { apiUrl } = settingsStore.getState()
+    const response = await fetch(`${apiUrl}/generate-report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)

@@ -9,7 +9,7 @@ class ReportAgent:
         self.api_key = api_key or os.environ.get("GEMINI_API_KEY", "")
         self.client = genai.Client(api_key=self.api_key) if self.api_key else None
 
-    def generate_pdf_report(self, data: dict, output_path: str):
+    def generate_pdf_report(self, data: dict, output_path: str = None):
         # 1. Get structured reasoning from Gemini
         ai_data = {
             "overview": "Gemini API key not configured. Cannot generate reasoning.",
@@ -153,5 +153,9 @@ class ReportAgent:
             pdf.set_text_color(*COLOR_PRIMARY)
             pdf.cell(0, 6, str(v), ln=True)
             
+        # If no output path is given, return raw bytes (for cloud/in-memory use)
+        if output_path is None:
+            return bytes(pdf.output())
+
         pdf.output(output_path)
         return output_path

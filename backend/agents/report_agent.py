@@ -22,6 +22,7 @@ class ReportAgent:
                 f"You are a Senior Energy Analyst. Analyze this energy prediction data. "
                 f"If the data contains 'horizon' or 'growth_rate', treat this as a long-term MACRO decadal forecast. "
                 f"If it contains 'hour' or 'lag_24h', treat this as a short-term MICRO operational forecast. "
+                f"Note that estimated carbon emissions are present. Be sure to incorporate sustainability, carbon intensity, and the strategic financial/environmental benefits of off-peak load shifting into your analysis. "
                 f"Return ONLY a valid JSON object with EXACTLY these three keys: "
                 f"'overview' (a 2-3 sentence strategic executive summary), "
                 f"'risks' (an array of 3 bullet-point strings highlighting key failure risks), "
@@ -71,6 +72,23 @@ class ReportAgent:
             status = "ELEVATED"
         else:
             status = "CRITICAL"
+
+        # Carbon & Load Shifting Calculations
+        features = data.get('features', {})
+        hour = features.get('hour', 12) if isinstance(features, dict) else 12
+        is_daylight = 9 <= int(hour) <= 16
+        emission_factor = 0.35 if is_daylight else 0.78
+        co2_tons = pred_val * emission_factor
+        
+        if co2_tons < 40:
+            co2_grade = "A+ (Clean Grid)"
+        elif co2_tons < 80:
+            co2_grade = "B (Moderate Mix)"
+        else:
+            co2_grade = "F (Fossil Heavy)"
+            
+        shift_savings_aud = (pred_val * 0.15) * 134
+        shift_savings_co2 = (pred_val * 0.15) * (0.78 - 0.35)
 
         # Shaded Metrics Box
         pdf.ln(2)
@@ -129,6 +147,20 @@ class ReportAgent:
         pdf.set_font("Helvetica", size=11)
         pdf.set_text_color(*COLOR_PRIMARY)
         pdf.multi_cell(0, 6, ai_data.get("overview", ""))
+        pdf.ln(8)
+
+        # Carbon Footprint & Load Shifting Strategy Section
+        print_section_header("Carbon Footprint & Load-Shifting Strategy")
+        pdf.set_font("Helvetica", style="B", size=11)
+        pdf.set_text_color(*COLOR_PRIMARY)
+        pdf.cell(0, 6, f"Estimated Carbon Intensity: {co2_tons:.1f} Metric Tons CO2 | Rating: {co2_grade}", ln=True)
+        pdf.set_font("Helvetica", size=11)
+        pdf.multi_cell(0, 6, (
+            f"At the predicted demand level of {pred_val:,.1f} MWh, grid carbon emissions are estimated at {co2_tons:.1f} tCO2 "
+            f"(based on time-of-day solar availability vs. fossil fuel peaker dependence). "
+            f"By executing a 15% off-peak load shifting simulation (transferring non-essential industrial operations to solar-rich daylight hours), "
+            f"the facility can achieve an estimated daily cost reduction of ${shift_savings_aud:,.0f} AUD while eliminating {shift_savings_co2:.1f} metric tons of CO2."
+        ))
         pdf.ln(8)
 
         # Risks

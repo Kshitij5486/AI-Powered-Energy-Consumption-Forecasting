@@ -24,6 +24,7 @@ export default function PredictorPortal() {
     lag_24h: 120, lag_12h: 118, roll_mean_24h: 125, roll_std_24h: 4,
   })
   const [predictionResult, setPredictionResult] = useState<PredictionResponse | null>(null)
+  const [isShiftActive, setIsShiftActive] = useState<boolean>(false)
 
   const predictMutation = useMutation({
     mutationFn: () => api.predict({ data: features, model: 'ensemble' }),
@@ -168,6 +169,26 @@ export default function PredictorPortal() {
                   min={80} max={160} step={0.5} value={features.roll_mean_24h} onChange={(v) => updateFeature('roll_mean_24h', v)} 
                 />
               </div>
+
+              {/* Load Shifting Simulator Toggle */}
+              <div className="mt-4 p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <Icons.Zap className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Simulate Load Shifting</div>
+                    <div className="text-[11px] text-slate-500">Shift 15% peak demand to off-peak solar hours</div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsShiftActive(!isShiftActive)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm",
+                    isShiftActive ? "bg-emerald-600 text-white hover:bg-emerald-700" : "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50"
+                  )}
+                >
+                  {isShiftActive ? "ACTIVE" : "SIMULATE"}
+                </button>
+              </div>
             </GlassCard>
           </div>
 
@@ -193,40 +214,71 @@ export default function PredictorPortal() {
                     {/* Left Side: Live Metrics & Insight */}
                     <div className="flex flex-col items-center border-r border-gray-100 pr-4">
                       
-                      {/* Status Pill */}
+                      {/* Status Pill & Savings Banner */}
                       {(() => {
-                        const status = getGridStatus(predictionResult.prediction)
+                        const basePrediction = predictionResult.prediction
+                        const activePrediction = isShiftActive ? basePrediction * 0.85 : basePrediction
+                        const status = getGridStatus(activePrediction)
+                        const isDaylight = features.hour >= 9 && features.hour <= 16
+                        const emissionFactor = isDaylight ? 0.35 : 0.78
+                        const co2Tons = activePrediction * emissionFactor
+                        const co2Grade = co2Tons < 40 ? { label: 'A+ CLEAN', text: 'text-emerald-600', bg: 'bg-emerald-50 border-emerald-200' } : co2Tons < 80 ? { label: 'B MODERATE', text: 'text-amber-600', bg: 'bg-amber-50 border-amber-200' } : { label: 'F DIRTY', text: 'text-red-600', bg: 'bg-red-50 border-red-200' }
+                        const costAud = activePrediction * FINANCIAL_RATE_AUD
+                        const costSavings = (basePrediction - activePrediction) * FINANCIAL_RATE_AUD
+                        const co2Savings = (basePrediction - activePrediction) * (0.78 - 0.35)
+
                         return (
-                          <div className={cn("flex items-center gap-2 px-5 py-2 rounded-full border shadow-sm mb-6", status.bg, status.border, status.text)}>
-                            {status.icon}
-                            <span className="text-base font-black tracking-widest uppercase">{status.label} LOAD</span>
+                          <div className="w-full flex flex-col items-center">
+                            {isShiftActive && (
+                              <div className="w-full mb-4 p-3 bg-emerald-600 text-white rounded-xl shadow-md flex items-center justify-center gap-2 text-xs font-bold animate-pulse">
+                                <Icons.TrendingDown className="w-4 h-4 shrink-0" />
+                                <span>💡 Load Shift Active: Saving ${costSavings.toLocaleString(undefined, {maximumFractionDigits:0})} & {co2Savings.toFixed(1)} Tons CO₂ today!</span>
+                              </div>
+                            )}
+
+                            <div className={cn("flex items-center gap-2 px-5 py-2 rounded-full border shadow-sm mb-6", status.bg, status.border, status.text)}>
+                              {status.icon}
+                              <span className="text-base font-black tracking-widest uppercase">{status.label} LOAD</span>
+                            </div>
+
+                            {/* Vertical Metrics */}
+                            <div className="flex flex-col items-center text-center w-full">
+                              <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Predicted Energy Demand</div>
+                              <div className="text-6xl font-black text-gray-900 tracking-tighter mb-1 flex items-center justify-center">
+                                {isShiftActive && (
+                                  <span className="line-through text-2xl text-gray-400 mr-3 font-bold">{basePrediction.toFixed(1)}</span>
+                                )}
+                                {activePrediction.toFixed(1)}<span className="text-2xl text-gray-400 font-bold ml-1">MWh</span>
+                              </div>
+                              <div className="text-base font-bold text-gray-400 mb-6">
+                                ± {predictionResult.uncertainty.toFixed(1)} MWh
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-3 w-full">
+                                <div className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl border border-gray-200">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Financial Cost</span>
+                                  <div className="text-2xl font-black text-emerald-600 tracking-tighter">
+                                    ${costAud.toLocaleString(undefined, {maximumFractionDigits:0})}
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col items-center justify-center p-3 bg-gray-50 rounded-xl border border-gray-200 relative overflow-hidden">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest mb-0.5">Carbon Footprint</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-2xl font-black text-slate-800 tracking-tighter">{co2Tons.toFixed(1)}</span>
+                                    <span className="text-xs font-bold text-gray-500">tCO₂</span>
+                                    <span className={cn("text-[9px] font-black px-1.5 py-0.5 rounded border ml-1", co2Grade.bg, co2Grade.text)}>{co2Grade.label}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
                           </div>
                         )
                       })()}
-
-                      {/* Vertical Metrics */}
-                      <div className="flex flex-col items-center text-center">
-                        <div className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">Predicted Energy Demand</div>
-                        <div className="text-6xl font-black text-gray-900 tracking-tighter mb-1">
-                          {predictionResult.prediction.toFixed(1)}<span className="text-2xl text-gray-400 font-bold ml-1">MWh</span>
-                        </div>
-                        <div className="text-base font-bold text-gray-400 mb-6">
-                          ± {predictionResult.uncertainty.toFixed(1)} MWh
-                        </div>
-                        
-                        <div className="flex items-center gap-3 px-6 py-3 bg-gray-50 rounded-xl border border-gray-200">
-                          <div className="flex flex-col text-right">
-                             <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Financial Cost</span>
-                          </div>
-                          <div className="text-3xl font-black text-emerald-600 tracking-tighter border-l border-gray-200 pl-3">
-                            ${(predictionResult.prediction * FINANCIAL_RATE_AUD).toLocaleString(undefined, {maximumFractionDigits:0})}
-                          </div>
-                        </div>
-                      </div>
                       
                       {/* AI Insight Summary */}
                       {predictionResult.feature_contributions && (
-                        <div className="mt-8 pt-6 border-t border-gray-100 w-full text-center max-w-sm">
+                        <div className="mt-6 pt-5 border-t border-gray-100 w-full text-center max-w-sm">
                            <div className="flex items-center justify-center gap-2 text-blue-600 mb-2">
                              <Icons.Sparkles className="w-5 h-5" />
                              <span className="text-xs font-black uppercase tracking-widest">AI Insight Generated</span>
@@ -236,6 +288,18 @@ export default function PredictorPortal() {
                            </p>
                         </div>
                       )}
+
+                      {/* PDF Export Action */}
+                      <div className="mt-6 pt-5 border-t border-gray-100 w-full max-w-sm">
+                        <button
+                          onClick={handleDownloadReport}
+                          disabled={!predictionResult}
+                          className="w-full px-4 py-3 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                        >
+                          <Icons.FileBarChart className="w-5 h-5 text-emerald-400" />
+                          Export Executive PDF
+                        </button>
+                      </div>
                     </div>
 
                     {/* Right Side: Significance & Actions */}
@@ -275,19 +339,37 @@ export default function PredictorPortal() {
                               </div>
                             </li>
                           </ul>
-                        </div>
-                      </div>
 
-                      {/* PDF Export Action (Bottom - mirroring AI Insight line) */}
-                      <div className="mt-8 pt-6 border-t border-gray-100 w-full">
-                        <button
-                          onClick={handleDownloadReport}
-                          disabled={!predictionResult}
-                          className="w-full px-4 py-3 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-black transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
-                        >
-                          <Icons.FileBarChart className="w-5 h-5 text-emerald-400" />
-                          Export Executive PDF
-                        </button>
+                          <div className="mt-5 pt-5 border-t border-gray-100">
+                            <h5 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider mb-3 flex items-center gap-1.5">
+                              <Icons.Leaf className="w-4 h-4 text-emerald-500" />
+                              Carbon Sustainability Grades
+                            </h5>
+                            <ul className="space-y-3">
+                              <li className="flex items-start gap-3">
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 mt-0.5 shrink-0">A+</span>
+                                <div>
+                                  <span className="text-xs font-bold text-slate-800 block">Clean Grid (&lt; 40 tCO₂)</span>
+                                  <span className="text-[11px] text-slate-500">High solar availability. Lowest carbon intensity.</span>
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-3">
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 mt-0.5 shrink-0">B</span>
+                                <div>
+                                  <span className="text-xs font-bold text-slate-800 block">Moderate Mix (40-80 tCO₂)</span>
+                                  <span className="text-[11px] text-slate-500">Balanced renewable and natural gas generation mix.</span>
+                                </div>
+                              </li>
+                              <li className="flex items-start gap-3">
+                                <span className="text-[10px] font-black px-1.5 py-0.5 rounded bg-red-50 text-red-700 border border-red-200 mt-0.5 shrink-0">F</span>
+                                <div>
+                                  <span className="text-xs font-bold text-slate-800 block">Fossil Heavy (&gt; 80 tCO₂)</span>
+                                  <span className="text-[11px] text-slate-500">Peak peaker plant dependence. Ideal for load-shifting!</span>
+                                </div>
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
                       </div>
                     </div>
 
